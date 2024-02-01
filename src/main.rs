@@ -1,24 +1,60 @@
+use crate::map::Map;
+use crate::snake::Snake;
+use crate::types::Direction;
+
 use std::io::{self, Write};
+use std::time::{Duration, Instant};
+
+use crossterm::cursor;
 use crossterm::{
-    ExecutableCommand, QueueableCommand,
-    terminal, cursor, style::{self, Stylize}
+    cursor::MoveTo,
+    event::{poll, read, Event},
+    execute, queue,
+    style::Print,
+    terminal,
 };
 
+pub mod map;
+pub mod snake;
+pub mod types;
+
 fn main() -> io::Result<()> {
-  let mut stdout = io::stdout();
+    terminal::enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    queue!(stdout, cursor::Hide)?;
 
-  stdout.execute(terminal::Clear(terminal::ClearType::All))?;
+    let mut map = Map::new(16, 8);
+    map.respawn_food();
+    let mut snake = Snake::new(&mut map, (4, 4).into(), Direction::Right, 3).unwrap();
 
-  for y in 0..40 {
-    for x in 0..150 {
-      if (y == 0 || y == 40 - 1) || (x == 0 || x == 150 - 1) {
-        // in this loop we are more efficient by not flushing the buffer.
-        stdout
-          .queue(cursor::MoveTo(x,y))?
-          .queue(style::PrintStyledContent( "█".magenta()))?;
-      }
+    let mut timer = Instant::now();
+    let period = Duration::from_millis(200);
+
+    loop {
+        if poll(Duration::from_millis(10))? {
+            if let Event::Key(event) = read()? {
+                snake.update_dir(event.code);
+            }
+        }
+        if timer.elapsed() > period {
+            if !snake.travel() {
+                break;
+            }
+
+            queue!(stdout, terminal::Clear(terminal::ClearType::All))?;
+            snake.draw()?;
+            stdout.flush()?;
+
+            timer = Instant::now();
+        }
     }
-  }
-  stdout.flush()?;
-  Ok(())
+
+    execute!(
+        stdout,
+        terminal::Clear(terminal::ClearType::All),
+        MoveTo(0, 0),
+        Print(format!("Game Over. Total length: {}", snake.length()))
+    )?;
+
+    Ok(())
 }
